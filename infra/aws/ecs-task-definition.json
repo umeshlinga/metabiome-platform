@@ -1,0 +1,48 @@
+{
+  "family": "metabiome-api",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/metabiome-api-role",
+  "containerDefinitions": [
+    {
+      "name": "metabiome-api",
+      "image": "ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/metabiome-api:latest",
+      "essential": true,
+      "portMappings": [
+        { "containerPort": 8000, "protocol": "tcp" }
+      ],
+      "environment": [
+        { "name": "ENVIRONMENT",        "value": "production" },
+        { "name": "AWS_REGION",         "value": "us-east-1" },
+        { "name": "S3_BUCKET_RAW",      "value": "metabiome-raw-fastq-ACCOUNT_ID" },
+        { "name": "S3_BUCKET_RESULTS",  "value": "metabiome-pipeline-results-ACCOUNT_ID" },
+        { "name": "AWS_BATCH_JOB_QUEUE","value": "metabiome-pipeline-queue" }
+      ],
+      "secrets": [
+        {
+          "name": "POSTGRES_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:metabiome/postgres-password"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/metabiome-api",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs",
+          "awslogs-create-group": "true"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 10
+      }
+    }
+  ]
+}
