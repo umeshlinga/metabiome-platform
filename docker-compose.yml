@@ -1,0 +1,77 @@
+version: "3.9"
+
+services:
+
+  # ── PostgreSQL ─────────────────────────────────────────
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-metabiome}
+      POSTGRES_USER: ${POSTGRES_USER:-metabiome_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_local}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-metabiome_user}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── FastAPI backend ────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-metabiome}
+      POSTGRES_USER: ${POSTGRES_USER:-metabiome_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_local}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      S3_BUCKET_RAW: ${S3_BUCKET_RAW:-metabiome-raw-fastq}
+      S3_BUCKET_RESULTS: ${S3_BUCKET_RESULTS:-metabiome-pipeline-results}
+      ENVIRONMENT: development
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./api:/app/api
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ── React frontend ─────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../infra/docker/Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    environment:
+      REACT_APP_API_URL: http://localhost:8000
+    volumes:
+      - ./frontend/src:/app/src
+    depends_on:
+      - api
+
+  # ── PgAdmin (DB browser for dev) ──────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@metabiome.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      - db
+    profiles:
+      - tools
+
+volumes:
+  pgdata:

@@ -1,0 +1,56 @@
+# Environment
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Nextflow
+work/
+.nextflow/
+.nextflow.log*
+results/
+*.nextflow.log
+
+# Node / React
+node_modules/
+frontend/build/
+frontend/.env
+
+# Data files (never commit real patient data)
+*.fastq
+*.fastq.gz
+*.bam
+*.bam.bai
+*.vcf
+*.vcf.gz
+data/real/
+
+# AWS
+*.pem
+*.tfstate
+*.tfstate.backup
+.terraform/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+*.log

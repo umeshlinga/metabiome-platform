@@ -1,0 +1,112 @@
+name: MetaBiome CI/CD
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+
+  # ── Pipeline QC tests ──────────────────────────────────
+  test-pipeline:
+    name: Pipeline Pytest QC
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install pipeline deps
+        run: pip install pytest pytest-cov
+      - name: Run pipeline unit tests
+        run: |
+          cd pipeline
+          pytest tests/ -v --tb=short
+        env:
+          PIPELINE_RESULTS_DIR: tests/fixtures/results
+          PIPELINE_SAMPLE_ID: test_sample
+
+  # ── API tests ──────────────────────────────────────────
+  test-api:
+    name: FastAPI Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: metabiome_test
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install API deps
+        run: pip install -r api/requirements.txt
+      - name: Run API tests
+        run: |
+          cd api
+          pytest tests/ -v --cov=. --cov-report=xml
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: metabiome_test
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+          ENVIRONMENT: test
+
+  # ── Docker build check ─────────────────────────────────
+  docker-build:
+    name: Docker build check
+    runs-on: ubuntu-latest
+    needs: [test-pipeline, test-api]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build API image
+        run: docker build -f infra/docker/Dockerfile.api -t metabiome-api:ci .
+      - name: Build frontend image
+        run: docker build -f infra/docker/Dockerfile.frontend -t metabiome-frontend:ci ./frontend
+
+  # ── Deploy to AWS (main branch only) ──────────────────
+  deploy:
+    name: Deploy to AWS ECS
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ secrets.AWS_REGION }}
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build, tag, and push API image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -f infra/docker/Dockerfile.api \
+            -t $ECR_REGISTRY/metabiome-api:$IMAGE_TAG \
+            -t $ECR_REGISTRY/metabiome-api:latest .
+          docker push $ECR_REGISTRY/metabiome-api:$IMAGE_TAG
+          docker push $ECR_REGISTRY/metabiome-api:latest
+      - name: Deploy to ECS
+        run: |
+          aws ecs update-service \
+            --cluster metabiome-cluster \
+            --service metabiome-api \
+            --force-new-deployment \
+            --region ${{ secrets.AWS_REGION }}
