@@ -276,13 +276,7 @@ This project uses publicly available microbiome datasets:
 | Cloud | AWS ECS, Batch, S3, RDS, IAM, VPC |
 | DevOps | Docker, Docker Compose, GitHub Actions |
 
----
 
-## License
-
-MIT — see [LICENSE](LICENSE)
-
----
 
 ## Author
 
